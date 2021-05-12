@@ -98,6 +98,7 @@ predict i = runST $ do
   -- - Calculate the average of it's northern and western neighbours
   -- - Find the hop which brings us closest to the target value
   -- - Write that hop value as well as the arrived at value.
+  -- - Adjust the `a` parameter
   sequenceA_
     [ do
         a  <- runMaybeT $ guard (x /= 0) >> readPixel p (pred x) y
