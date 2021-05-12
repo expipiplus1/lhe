@@ -8,88 +8,96 @@ import           Control.Monad                  ( guard )
 import           Control.Monad.ST               ( runST )
 import           Control.Monad.Trans.Maybe
 import           Data.Array.Unboxed
-import           Data.Bifunctor                 ( first )
 import           Data.Foldable
-import           Data.Functor
 import           Data.Int
 import           Data.Ord
 import           Data.STRef
 import           Data.Word
-import           Debug.Trace
 import           System.Environment
 import           System.FilePath
 
 main :: IO ()
 main = do
-  [p] <- getArgs
-  d   <- either fail pure =<< readImage p
-  let
-    lc :: Image PixelYCbCr8
-    lc                  = convertImage . convertRGB8 $ d
+  p <- getArgs >>= \case
+    [p] -> pure p
+    _   -> fail "Usage: lhe image.png"
+  d <- either fail pure =<< readImage p
+  let lc :: Image PixelYCbCr8
+      lc                = convertImage . convertRGB8 $ d
+      w                 = imageWidth lc
+      h                 = imageHeight lc
 
-    w                   = imageWidth lc
-    h                   = imageHeight lc
-    scale               = scaleBilinear (w `quot` 2) (h `quot` 2)
-    upScale             = scaleBilinear w h
-    luma                = extractComponent PlaneLuma lc
-    cb                  = scale $ extractComponent PlaneCb lc
-    cr                  = scale $ extractComponent PlaneCr lc
+      -- Split the image into L,Cr,Cb, colors at quarter resolution
+      scale             = scaleBilinear (w `quot` 2) (h `quot` 2)
+      upScale           = scaleBilinear w h
+      luma              = extractComponent PlaneLuma lc
+      cb                = scale $ extractComponent PlaneCb lc
+      cr                = scale $ extractComponent PlaneCr lc
 
-    -- lheImage                      = lhe luma
+      -- Run LHE on the channels
+      (_, encodedL , _) = predict luma
+      (_, encodedCb, _) = predict cb
+      (_, encodedCr, _) = predict cr
 
-    (_, predictedL , _) = predict luma
-    (_, predictedCb, _) = predict cb
-    (_, predictedCr, _) = predict cr
-    recombined          = zipPlanes PixelYCbCr8
-                                    predictedL
-                                    (upScale predictedCb)
-                                    (upScale predictedCr)
-  -- writePng (takeBaseName p <> "_luma.png") luma
-  -- writePng (takeBaseName p <> "_cr.png")   cr
-  -- writePng (takeBaseName p <> "_cb.png")   cb
+      -- Recombine and save the image
+      recombined =
+        zipPlanes PixelYCbCr8 encodedL (upScale encodedCb) (upScale encodedCr)
   writePng (takeBaseName p <> "_recombined.png")
            (convertImage recombined :: Image PixelRGB8)
-  -- writePng (takeBaseName p <> "_lhe.png") lheImage
-  writePng (takeBaseName p <> "_predicted.png") predictedL
-  pure ()
+  writePng (takeBaseName p <> "_encoded_luma.png") encodedL
 
 ----------------------------------------------------------------
 -- LHE
 ----------------------------------------------------------------
 
+-- The number of hops each side of 0
 hopRange :: Int8
 hopRange = 3
 
+-- The 'a' parameter, the distance of the first hop away from 0
 aInit :: A
 aInit = A 7
+aMin :: A
 aMin = A 4
+aMax :: A
 aMax = A 10
 
-maxHopRange = 0.3 -- How far to to the max or min bound can we reach
-
-newtype A = A { unA :: Int }
-  deriving (Eq, Ord, Ix, Enum)
-
+-- The uppermost hop will move this far towards black or white
+maxHopRange :: Float
+maxHopRange = 0.8 -- How far to to the max or min bound can we reach
 
 -- Thoughts:
 -- - Better prediction given surrounding pixels
 -- - Skew hop selection logarithmically, instead of absolute nearest
 --
+
+newtype A = A { unA :: Int }
+  deriving (Eq, Ord, Ix, Enum)
+
+newtype Hop = Hop {unHop :: Int8}
+  deriving (Eq, Ord, Ix, Show)
+
+-- | Takes a monochrome image, returns:
 --
-
--- lhe :: Image Word8 -> Image Word8
--- lhe i = let predicted = predict i in predicted
-
-
+-- - The first pixel value
+-- - The image as it has been encoded (for debugging)
+-- - The hops
 predict :: Image Word8 -> (Word8, Image Word8, Image Word8)
 predict i = runST $ do
   let w = imageWidth i
       h = imageHeight i
+
   o        <- newMutableImage w h
+  p        <- newMutableImage w h
   aRef     <- newSTRef aInit
   smallHop <- newSTRef False
-  p        <- newMutableImage w h
+
   writePixel p 0 0 (pixelAt i 0 0)
+
+  -- For every pixel:
+  -- - Calculate the average of it's northern and western neighbours
+  -- - Find the hop which brings us closest to the target value
+  -- - Write that hop value as well as the arrived at value.
   sequenceA_
     [ do
         a  <- runMaybeT $ guard (x /= 0) >> readPixel p (pred x) y
@@ -112,22 +120,12 @@ predict i = runST $ do
     , x <- [0 .. pred w]
     , x /= 0 || y /= 0
     ]
+
   oF <- freezeImage o
   pF <- freezeImage p
+
   pure (pixelAt i 0 0, pF, oF)
 
-data LocalPixels a = LocalPixels
-  { lC :: Maybe (LHEPixel a)
-  , lB :: Maybe (LHEPixel a)
-  , lD :: Maybe (LHEPixel a)
-  , lA :: Maybe (LHEPixel a)
-  , lX :: a
-  }
-
-data LHEPixel a = Raw a | AHop Hop
-
-newtype Hop = Hop {unHop :: Int8}
-  deriving (Eq, Ord, Ix, Show)
 
 isSmall :: Hop -> Bool
 isSmall (Hop i) = i >= (-1) && i <= 1
@@ -139,28 +137,21 @@ average lA lB = case (lA, lB) of
   (Nothing, Just b ) -> b
   (Just a , Just b ) -> fi ((fi a + fi b :: Word16) `quot` 2)
 
--- hopValue :: Word8 -> Float -> A -> Hop -> Int8
--- hopValue predicted kx a =
---   let n :: Float
---       n  = (255 - fi predicted / kx) ** (1 / kx)
-
---       p :: Float
---       p  = (fi predicted / kx) ** (1 / kx)
-
---       go = \case
---         Hop 0    -> 0
---         Hop 1    -> unA a
---         Hop (-1) -> negate (unA a)
---         Hop i | i > 1     -> go (Hop (pred i)) * n
---               | otherwise -> go (Hop (succ i)) * p
---   in  go
-
-hopValue :: A -> Word8 -> Hop -> Float
+hopValue
+  :: A
+  -- ^ First hop distance
+  -> Word8
+  -- ^ Predicted value
+  -> Hop
+  -- ^ The Hop
+  -> Float
+  -- ^ The hop distance
 hopValue (A a) predicted =
-  let rangeDivisions = pred hopRange -- The top hop reaches all of `range`
+  let rangeDivisions = pred hopRange -- The top hop reaches all of `hopRange`
 
       p =
         (maxHopRange * (255 - fi predicted) / fi a) ** (1 / fi rangeDivisions)
+
       n = (maxHopRange * fi predicted / fi a) ** (1 / fi rangeDivisions)
   in  \case
         Hop 0 -> 0
