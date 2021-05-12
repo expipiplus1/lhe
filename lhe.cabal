@@ -1,0 +1,41 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.34.4.
+--
+-- see: https://github.com/sol/hpack
+
+name:           lhe
+version:        0.0
+category:       Data Structures
+homepage:       https://github.com/expipiplus1/lhe#readme
+bug-reports:    https://github.com/expipiplus1/lhe/issues
+author:         Joe Hermaszewski
+maintainer:     Joe Hermaszewski <hip-hop@monoid.al>
+copyright:      2021 Joe Hermaszewski
+build-type:     Simple
+extra-source-files:
+    .gitignore
+    readme.md
+    default.nix
+
+source-repository head
+  type: git
+  location: https://github.com/expipiplus1/lhe
+
+executable lhe
+  main-is: Main.hs
+  other-modules:
+      Paths_lhe
+  hs-source-dirs:
+      src
+  default-extensions:
+      DataKinds FlexibleContexts GeneralizedNewtypeDeriving LambdaCase QuasiQuotes ScopedTypeVariables TemplateHaskell TypeApplications TypeFamilies TypeOperators ViewPatterns
+  ghc-options: -Wall -main-is Main
+  build-depends:
+      JuicyPixels
+    , JuicyPixels-extra
+    , array
+    , base >=4.8 && <5
+    , filepath
+    , transformers
+  default-language: Haskell2010

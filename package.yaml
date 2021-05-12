@@ -1,0 +1,29 @@
+name: lhe
+version: 0.0
+category: Data Structures
+author: Joe Hermaszewski
+maintainer: Joe Hermaszewski <hip-hop@monoid.al>
+copyright: 2021 Joe Hermaszewski
+github: expipiplus1/lhe
+extra-source-files:
+- .gitignore
+- readme.md
+- default.nix
+
+executables:
+  lhe:
+    source-dirs: src
+    main: Main
+    dependencies:
+    - base       >= 4.8 && < 5
+    - JuicyPixels
+    - filepath
+    - transformers
+    - array
+    - JuicyPixels-extra
+
+ghc-options: -Wall
+
+default-extensions: DataKinds FlexibleContexts GeneralizedNewtypeDeriving LambdaCase
+  QuasiQuotes ScopedTypeVariables TemplateHaskell TypeApplications TypeFamilies TypeOperators
+  ViewPatterns
