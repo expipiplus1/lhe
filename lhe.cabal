@@ -25,17 +25,24 @@ source-repository head
 executable lhe
   main-is: Main.hs
   other-modules:
+      HopTable
+      Huffman
+      Scale
       Paths_lhe
   hs-source-dirs:
       src
   default-extensions:
       DataKinds FlexibleContexts GeneralizedNewtypeDeriving LambdaCase QuasiQuotes ScopedTypeVariables TemplateHaskell TypeApplications TypeFamilies TypeOperators ViewPatterns
-  ghc-options: -Wall -main-is Main
+  ghc-options: -Wall -O2 -threaded -rtsopts -with-rtsopts=-N -main-is Main
   build-depends:
       JuicyPixels
     , JuicyPixels-extra
     , array
     , base >=4.8 && <5
+    , containers
     , filepath
+    , pqueue
+    , template-haskell
     , transformers
+    , vector
   default-language: Haskell2010
